@@ -7,10 +7,15 @@ import requests
 import json
 import os
 import openai
+import error_messages
 
 BASE_URL = 'http://ec2-54-175-34-191.compute-1.amazonaws.com:8000/conversation_builder'
 OPENAI_API_KEY_ENV = 'OPENAI_API_KEY'
-MODEL = "gpt-4-0613"
+MODEL = 'gpt-4-0613'
+LLM_POSITION_QUERY_FILE = 'Queries\llm_position.txt'
+SYSTEM_ROLE = 'system'
+USER_ROLE = 'user'
+ASSISTANT_INTRODUCTION = 'You are a helpful assistant.'
 
 app = FastAPI()
 
@@ -60,8 +65,7 @@ async def get_conversation_llm(position: str):
 
     Raises:
         HTTPException:
-            - 400: If the 'position' parameter is missing.
-            - 500: If the 'query.txt' file is not found or an error occurs during the API call.
+            - 500: If the 'Queries\llm_position.txt' file is not found or an error occurs during the API call.
 
     Notes:
         - Before using this endpoint, ensure that you have set the 'OPENAI_API_KEY' environment variable
@@ -73,30 +77,27 @@ async def get_conversation_llm(position: str):
 
         The response will contain the generated conversation data for the 'developer' position.
     """
-    if not position:
-        raise HTTPException(status_code=400, detail="Position parameter is missing")
-    
     openai.api_key = os.getenv(OPENAI_API_KEY_ENV)
 
     try:
         # Read query and insert position
-        with open('Queries\llm_position.txt', mode='r') as file:
+        with open(LLM_POSITION_QUERY_FILE, mode='r') as file:
             query_text = file.read().replace("{POSITION}", position)
     
         response = openai.ChatCompletion.create(
         model=MODEL,
         messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": query_text}
+            {"role": SYSTEM_ROLE, "content": ASSISTANT_INTRODUCTION},
+            {"role": USER_ROLE, "content": query_text}
         ],
         temperature=0)
     
         return JSONResponse(content=json.loads(response.choices[0].message.content))
     except FileNotFoundError:
-        raise HTTPException(status_code=500, detail="Query file not found")
+        raise HTTPException(status_code=500, detail=error_messages.QUERY_FILE_NOT_FOUND)
     except Exception as e:
         # Handle other potential exceptions gracefully
-        raise HTTPException(status_code=500, detail="An error occurred while processing the request")
+        raise HTTPException(status_code=500, detail=error_messages.REQUEST_PROCESSING_ERROR)
 
 def get_chat_data(id: str):
     """
@@ -116,10 +117,10 @@ def get_chat_data(id: str):
         chat_response_API.raise_for_status()
         chat_data = chat_response_API.json()
         if "questions" not in chat_data:
-            raise HTTPException(status_code=500, detail="Invalid chat data")
+            raise HTTPException(status_code=500, detail=error_messages.INVALID_CHAT_DATA)
         return chat_data
     except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail="Error fetching chat data") from e
+        raise HTTPException(status_code=500, detail=error_messages.ERROR_FETCHING_CHAT_DATA) from e
 
 def get_question_data(qid: str):
     """
@@ -139,7 +140,7 @@ def get_question_data(qid: str):
         question_response_API.raise_for_status()
         return question_response_API.json()
     except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail="Error fetching question data") from e
+        raise HTTPException(status_code=500, detail=error_messages.ERROR_FETCHING_QUESTION_DATA) from e
 
 def get_answer_for_question(qid: str):
     """
@@ -160,6 +161,7 @@ def get_answer_for_question(qid: str):
         answer_data = answer_response_API.json()
         answer_to_return = Answer(options=[], range={})
 
+        # Iterate over each answer and search for matching qid
         for answer in answer_data:
             if qid in answer['qids']:
                 if 'range' in answer and not answer_to_return.range:
@@ -169,16 +171,19 @@ def get_answer_for_question(qid: str):
 
         return answer_to_return
     except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail="Error fetching answer data") from e
+        raise HTTPException(status_code=500, detail=error_messages.ERROR_FETCHING_ANSWER_DATA) from e
 
 def serialize_question(question):
     if question is None:
         return None
 
-    serialized = {"type": int(question.type), "text": question.text, "order": question.order}
     answer = question.answer
-    if answer and ((answer.options and len(answer.options) > 0) or (answer.range and bool(answer.range))):
-        serialized["answer"] = serialize_answer(answer)
+    serialized = {
+        "type": int(question.type),
+        "text": question.text,
+        "order": question.order,
+        "answer": serialize_answer(answer) if answer and (answer.options or answer.range) else None
+    }
 
     return serialized
 
@@ -186,10 +191,9 @@ def serialize_answer(answer):
     if answer is None:
         return None
 
-    serialized = {}
-    if answer.options and len(answer.options) > 0:
-        serialized["options"] = answer.options
-    if answer.range and bool(answer.range):
-        serialized["range"] = answer.range
+    serialized = {
+        "options": answer.options if answer.options else None,
+        "range": answer.range if answer.range else None
+    }
 
-    return serialized
+    return {key: value for key, value in serialized.items() if value is not None}
