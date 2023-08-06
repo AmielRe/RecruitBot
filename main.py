@@ -8,6 +8,7 @@ import json
 import os
 import openai
 import error_messages
+import logging
 
 BASE_URL = 'http://ec2-54-175-34-191.compute-1.amazonaws.com:8000/conversation_builder'
 OPENAI_API_KEY_ENV = 'OPENAI_API_KEY'
@@ -18,6 +19,7 @@ USER_ROLE = 'user'
 ASSISTANT_INTRODUCTION = 'You are a helpful assistant.'
 
 app = FastAPI()
+logging.basicConfig(level=logging.INFO, filename='app.log', filemode='w', format="%(asctime)s | %(levelname)s | %(message)s")
 
 @app.get("/conversation/{id}", response_description="Get conversation data for a specific chat ID")
 async def get_conversation(id: str):
@@ -33,6 +35,9 @@ async def get_conversation(id: str):
   Raises:
       - HTTPException(500): If there is an issue fetching data from external APIs.
   """
+
+  logging.info(f"New get_conversation with chat id '{id}'")
+
   chat_data = get_chat_data(id)
   questions = []
   for question in chat_data["questions"]:
@@ -43,6 +48,8 @@ async def get_conversation(id: str):
     answer = Answer(options=[], range={})
     if question_type in [QuestionType.MULTIPLE_CHOICE, QuestionType.NUMERIC]:
         answer = get_answer_for_question(question['qid'])
+
+    logging.debug(f"Finished fetching question - type = {question_type}, text = {question_text}, order = {question_order}")
     questions.append(Question(type=question_type, text=question_text, order=question_order, answer=answer))
 
   # Serialize the data to JSON using the custom serialization function for Answer and Question
@@ -77,13 +84,20 @@ async def get_conversation_llm(position: str):
 
         The response will contain the generated conversation data for the 'developer' position.
     """
+
+    logging.info(f"New get_conversation_llm for position '{position}'")
+
     openai.api_key = os.getenv(OPENAI_API_KEY_ENV)
+
+    logging.debug("OpenAI API key loaded")
 
     try:
         # Read query and insert position
         with open(LLM_POSITION_QUERY_FILE, mode='r') as file:
             query_text = file.read().replace("{POSITION}", position)
     
+        logging.info("Finished reading query file, sending API request to OpenAI")
+
         response = openai.ChatCompletion.create(
         model=MODEL,
         messages=[
@@ -92,11 +106,15 @@ async def get_conversation_llm(position: str):
         ],
         temperature=0)
     
+        logging.info("Finish sending API request to OpenAI, returning response")
+
         return JSONResponse(content=json.loads(response.choices[0].message.content))
     except FileNotFoundError:
+        logging.error(error_messages.QUERY_FILE_NOT_FOUND, exc_info=True)
         raise HTTPException(status_code=500, detail=error_messages.QUERY_FILE_NOT_FOUND)
     except Exception as e:
         # Handle other potential exceptions gracefully
+        logging.error(error_messages.REQUEST_PROCESSING_ERROR, exc_info=True)
         raise HTTPException(status_code=500, detail=error_messages.REQUEST_PROCESSING_ERROR)
 
 def get_chat_data(id: str):
@@ -113,13 +131,16 @@ def get_chat_data(id: str):
         - HTTPException(500): If there is an issue fetching data from external APIs.
     """
     try:
+        logging.info(f"Getting chat data for chat id '{id}'")
         chat_response_API = requests.get(f"{BASE_URL}/chat/{id}")
         chat_response_API.raise_for_status()
         chat_data = chat_response_API.json()
         if "questions" not in chat_data:
+            logging.error(error_messages.INVALID_CHAT_DATA, exc_info=True)
             raise HTTPException(status_code=500, detail=error_messages.INVALID_CHAT_DATA)
         return chat_data
     except requests.exceptions.RequestException as e:
+        logging.error(error_messages.ERROR_FETCHING_CHAT_DATA, exc_info=True)
         raise HTTPException(status_code=500, detail=error_messages.ERROR_FETCHING_CHAT_DATA) from e
 
 def get_question_data(qid: str):
@@ -136,10 +157,12 @@ def get_question_data(qid: str):
         - HTTPException(500): If there is an issue fetching data from external APIs.
     """
     try:
+        logging.info(f"Getting question data for question id '{qid}'")
         question_response_API = requests.get(f"{BASE_URL}/question/{qid}")
         question_response_API.raise_for_status()
         return question_response_API.json()
     except requests.exceptions.RequestException as e:
+        logging.error(error_messages.ERROR_FETCHING_QUESTION_DATA, exc_info=True)
         raise HTTPException(status_code=500, detail=error_messages.ERROR_FETCHING_QUESTION_DATA) from e
 
 def get_answer_for_question(qid: str):
@@ -156,6 +179,7 @@ def get_answer_for_question(qid: str):
         - HTTPException(500): If there is an issue fetching data from external APIs.
     """
     try:
+        logging.info(f"Getting answer data for question id '{qid}'")
         answer_response_API = requests.get(f"{BASE_URL}/answer")
         answer_response_API.raise_for_status()
         answer_data = answer_response_API.json()
@@ -171,6 +195,7 @@ def get_answer_for_question(qid: str):
 
         return answer_to_return
     except requests.exceptions.RequestException as e:
+        logging.error(error_messages.ERROR_FETCHING_ANSWER_DATA, exc_info=True)
         raise HTTPException(status_code=500, detail=error_messages.ERROR_FETCHING_ANSWER_DATA) from e
 
 def serialize_question(question):
