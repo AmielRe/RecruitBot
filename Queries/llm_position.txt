@@ -1,0 +1,50 @@
+Create an initial conversation between recruiter and a candidate for a {POSITION} job.
+the conversation should be in json format as follows (for example):
+{
+    "questions": [
+      {
+        "type": 1,
+        "text": "Hi! I'm Olivia, your personal Paradox job assistant. Thank you for your interest. We are looking for great talent for many types of jobs. To get started, can you please provide me with your first and last name?",
+        "order": 1
+      },
+      {
+        "type": 2,
+        "text": "From 1 to 10, how would you rate the process so far?",
+        "order": 5,
+        "answer": {
+          "range": {
+            "min": 1,
+            "max": 10
+          }
+        }
+      },
+      {
+        "type": 1,
+        "text": "Why do you want to work at Paradox?",
+        "order": 4
+      },
+      {
+        "type": 2,
+        "text": "How many years of Truck Driving experience do you have?",
+        "order": 2,
+        "answer": {
+          "range": {
+            "min": 0,
+            "max": 30
+          }
+        }
+      },
+      {
+        "type": 3,
+        "text": "Have you heard of Paradox before?",
+        "order": 3,
+        "answer": {
+          "options": ["Yes", "No"]
+        }
+      }
+    ]
+  }
+
+where type can be 1 for free text question, 2 for Numeric question or 3 for Multichoice question.
+order means the order the questions are asked by.
+create a new conversation in this format (number of questions can change)
