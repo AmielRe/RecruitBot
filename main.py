@@ -18,7 +18,10 @@ SYSTEM_ROLE = 'system'
 USER_ROLE = 'user'
 ASSISTANT_INTRODUCTION = 'You are a helpful assistant.'
 
+# NOTE: here i used a quick guide to refresh my memory on FastAPI - https://fastapi.tiangolo.com/tutorial/first-steps/
 app = FastAPI()
+
+# NOTE: here i used a quick guide to refresh my memory on python logging - "https://realpython.com/python-logging/"
 logging.basicConfig(level=logging.INFO, filename='app.log', filemode='w', format="%(asctime)s | %(levelname)s | %(message)s")
 
 @app.get("/conversation/{id}", response_description="Get conversation data for a specific chat ID")
@@ -87,7 +90,13 @@ async def get_conversation_llm(position: str):
 
     logging.info(f"New get_conversation_llm for position '{position}'")
 
-    openai.api_key = os.getenv(OPENAI_API_KEY_ENV)
+    # NOTE: here i did a quick search in Stack Overflow to see how to access environment variables - https://stackoverflow.com/questions/4906977/how-can-i-access-environment-variables-in-python
+    api_key = os.environ.get(OPENAI_API_KEY_ENV)
+    if api_key is None:
+        logging.error(error_messages.MISSING_OPENAI_API_KEY_ENV, exc_info=True)
+        raise HTTPException(status_code=500, detail=error_messages.MISSING_OPENAI_API_KEY_ENV)
+    
+    openai.api_key = api_key
 
     logging.debug("OpenAI API key loaded")
 
