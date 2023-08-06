@@ -5,11 +5,16 @@ from Models.Question import Question
 from Models.Answer import Answer
 import requests
 import json
+import os
+import openai
 
 BASE_URL = 'http://ec2-54-175-34-191.compute-1.amazonaws.com:8000/conversation_builder'
+OPENAI_API_KEY_ENV = 'OPENAI_API_KEY'
+MODEL = "gpt-4-0613"
+
 app = FastAPI()
 
-@app.get("/conversation/{id}", response_description="Get conversation data for a specific ID")
+@app.get("/conversation/{id}", response_description="Get conversation data for a specific chat ID")
 async def get_conversation(id: str):
   """
   Retrieve conversation data for a specific chat ID.
@@ -38,6 +43,60 @@ async def get_conversation(id: str):
   # Serialize the data to JSON using the custom serialization function for Answer and Question
   json_data = json.dumps({"id": id, "questions": questions}, ensure_ascii=False, separators=(',', ': '), default=serialize_question)
   return JSONResponse(content=json.loads(json_data))
+
+@app.get("/conversation_llm/{position}", response_description="Get conversation data created by LLM for a specific position")
+async def get_conversation_llm(position: str):
+    """
+    Fetches conversation data created by the Language Model (LLM) for a specific position.
+
+    This endpoint sends a user query, containing the provided 'position' parameter, to the OpenAI Language Model.
+    The model then generates a helpful assistant response based on the query.
+
+    Parameters:
+        position (str): The specific position for which the conversation data is requested.
+
+    Returns:
+        JSONResponse: A JSON response containing the generated conversation data.
+
+    Raises:
+        HTTPException:
+            - 400: If the 'position' parameter is missing.
+            - 500: If the 'query.txt' file is not found or an error occurs during the API call.
+
+    Notes:
+        - Before using this endpoint, ensure that you have set the 'OPENAI_API_KEY' environment variable
+          with your OpenAI API key.
+
+    Example Usage:
+        Assuming the application is running locally on 'http://localhost:8000', you can make a GET request to:
+        http://localhost:8000/conversation_llm/developer
+
+        The response will contain the generated conversation data for the 'developer' position.
+    """
+    if not position:
+        raise HTTPException(status_code=400, detail="Position parameter is missing")
+    
+    openai.api_key = os.getenv(OPENAI_API_KEY_ENV)
+
+    try:
+        # Read query and insert position
+        with open('Queries\llm_position.txt', mode='r') as file:
+            query_text = file.read().replace("{POSITION}", position)
+    
+        response = openai.ChatCompletion.create(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": query_text}
+        ],
+        temperature=0)
+    
+        return JSONResponse(content=json.loads(response.choices[0].message.content))
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Query file not found")
+    except Exception as e:
+        # Handle other potential exceptions gracefully
+        raise HTTPException(status_code=500, detail="An error occurred while processing the request")
 
 def get_chat_data(id: str):
     """
